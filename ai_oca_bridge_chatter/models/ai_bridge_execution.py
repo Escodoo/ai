@@ -1,6 +1,8 @@
 # Copyright 2025 Dixmit
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
+from markupsafe import Markup
+
 from odoo import _, fields, models
 
 
@@ -36,7 +38,23 @@ class AiBridgeExecution(models.Model):
                 )
             )
             recipient._notify_typing(is_typing=False)
-            response["author_id"] = self.chatter_user_id.partner_id.id
-            response["message_type"] = "comment"
+            # Existing bridges already return HTML. message_post escapes str
+            # bodies and the Html field then wraps them, producing
+            # <p>&lt;p&gt;...&lt;/p&gt;</p>. body_is_html=True also warns for
+            # internal users, so convert HTML to Markup instead of rewriting.
+            body = response.get("body")
+            body_is_html = bool(response.pop("body_is_html", False))
+            if not isinstance(body, Markup):
+                body = body or ""
+                if body_is_html or (body.lstrip().startswith("<") and ">" in body):
+                    body = Markup(body)
+            response.update(
+                {
+                    "author_id": self.chatter_user_id.partner_id.id,
+                    "body": body,
+                    "message_type": "comment",
+                    "subtype_xmlid": "mail.mt_comment",
+                }
+            )
 
         return super()._process_response_message(response)
